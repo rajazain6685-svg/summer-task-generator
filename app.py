@@ -32,12 +32,14 @@ Return ONLY valid JSON, no extra text, no markdown code fences, in this exact fo
         text = text.replace("json", "", 1).strip()
     return json.loads(text)
 
+def clean_text(text):
+    # Remove characters the PDF font can't render
+    return text.encode("latin-1", "replace").decode("latin-1")
 
 def create_pdf(school_name, logo_path, class_level, subject, topic, questions):
     pdf = FPDF()
     pdf.add_page()
 
-    # Header
     if logo_path:
         pdf.image(logo_path, x=10, y=8, w=20)
         pdf.set_xy(35, 10)
@@ -45,21 +47,22 @@ def create_pdf(school_name, logo_path, class_level, subject, topic, questions):
         pdf.set_xy(10, 10)
 
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, school_name, ln=True)
+    pdf.cell(0, 10, clean_text(school_name), new_x="LMARGIN", new_y="NEXT")
+
     pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, "Summer Vacation Task", ln=True)
+    pdf.cell(0, 8, "Summer Vacation Task", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 8, f"Class: {class_level}    Subject: {subject}    Topic: {topic}", ln=True)
+    pdf.cell(0, 8, clean_text(f"Class: {class_level}    Subject: {subject}    Topic: {topic}"), new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "", 11)
     for i, q in enumerate(questions, 1):
-        pdf.multi_cell(0, 7, f"Q{i}. {q['question']}")
+        pdf.multi_cell(0, 7, clean_text(f"Q{i}. {q['question']}"), new_x="LMARGIN", new_y="NEXT")
         if q["type"] == "mcq":
             for opt in q["options"]:
-                pdf.multi_cell(0, 6, f"    - {opt}")
+                pdf.multi_cell(0, 6, clean_text(f"    - {opt}"), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(2)
 
     pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
