@@ -11,7 +11,10 @@ client = genai.Client(api_key=api_key)
 
 supabase_url = st.secrets["SUPABASE_URL"]
 supabase_key = st.secrets["SUPABASE_KEY"]
-supabase = create_client(supabase_url, supabase_key)
+supabase = create_client(supabase_url, supabase_key)  # used for auth (signup/login/logout)
+
+service_key = st.secrets["SUPABASE_SERVICE_KEY"]
+db = create_client(supabase_url, service_key)  # used for table reads/writes (server-side only, bypasses RLS)
 
 # --- Auth helpers ---
 def sign_up(email, password):
@@ -148,9 +151,6 @@ if not st.session_state["user"]:
 # --- LOGGED IN ---
 # Re-attach the saved login session to this fresh connection so
 # Supabase's Row Level Security recognizes us as authenticated.
-supabase.auth.set_session(st.session_state["access_token"], st.session_state["refresh_token"])
-supabase.postgrest.auth(st.session_state["access_token"])
-
 user = st.session_state["user"]
 st.sidebar.write(f"Logged in as: {user.email}")
 if st.sidebar.button("Log Out"):
@@ -158,22 +158,22 @@ if st.sidebar.button("Log Out"):
     st.rerun()
 
 # Get or create teacher's school profile
-teacher_row = supabase.table("teachers").select("*").eq("id", user.id).execute()
+teacher_row = db.table("teachers").select("*").eq("id", user.id).execute()
 
 if not teacher_row.data:
     st.title("Set Up Your School (one-time)")
     school_name_input = st.text_input("School Name")
     if st.button("Save School"):
-        school_result = supabase.table("school_profile").insert({"school_name": school_name_input}).execute()
+        school_result = db.table("school_profile").insert({"school_name": school_name_input}).execute()
         school_id = school_result.data[0]["id"]
-        supabase.table("teachers").insert({
+        db.table("teachers").insert({
             "id": user.id, "school_id": school_id, "full_name": user.email, "role": "admin"
         }).execute()
         st.rerun()
     st.stop()
 
 school_id = teacher_row.data[0]["school_id"]
-school = supabase.table("school_profile").select("*").eq("id", school_id).execute().data[0]
+school = db.table("school_profile").select("*").eq("id", school_id).execute().data[0]
 school_name = school["school_name"]
 
 st.title("Summer Task Generator")
