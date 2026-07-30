@@ -117,6 +117,8 @@ if not st.session_state["user"]:
             try:
                 result = sign_in(email, password)
                 st.session_state["user"] = result.user
+                st.session_state["access_token"] = result.session.access_token
+                st.session_state["refresh_token"] = result.session.refresh_token
                 st.rerun()
             except Exception as e:
                 st.error(f"Login failed: {e}")
@@ -144,6 +146,10 @@ if not st.session_state["user"]:
 
 
 # --- LOGGED IN ---
+# Re-attach the saved login session to this fresh connection so
+# Supabase's Row Level Security recognizes us as authenticated.
+supabase.auth.set_session(st.session_state["access_token"], st.session_state["refresh_token"])
+
 user = st.session_state["user"]
 st.sidebar.write(f"Logged in as: {user.email}")
 if st.sidebar.button("Log Out"):
