@@ -6,6 +6,67 @@ from fpdf import FPDF
 import tempfile
 from streamlit_markmap import markmap
 
+st.set_page_config(page_title="Summer Task Generator", page_icon="📚", layout="centered")
+
+st.markdown("""
+<style>
+    .question-card {
+        background-color: #F1F8F4;
+        border: 1px solid #D7EAD9;
+        border-radius: 10px;
+        padding: 16px 20px;
+        margin-bottom: 14px;
+    }
+    .question-card .q-number {
+        color: #2E7D32;
+        font-weight: 700;
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .question-card .q-text {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 4px 0 8px 0;
+    }
+    .question-card .q-option {
+        padding: 2px 0 2px 12px;
+        color: #333;
+    }
+    .question-card .q-answer {
+        margin-top: 8px;
+        color: #2E7D32;
+        font-style: italic;
+        font-size: 0.92rem;
+    }
+    .app-header {
+        text-align: center;
+        padding: 10px 0 20px 0;
+    }
+    .app-header h1 {
+        margin-bottom: 0;
+    }
+    .app-header p {
+        color: #667;
+        margin-top: 4px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+def render_question_card(i, q, show_answer=True):
+    """Renders one question as a styled card. Works for st.markdown with HTML."""
+    html = f'<div class="question-card">'
+    html += f'<div class="q-number">Question {i}</div>'
+    html += f'<div class="q-text">{q["question"]}</div>'
+    if q["type"] == "mcq":
+        for opt in q["options"]:
+            html += f'<div class="q-option">◦ {opt}</div>'
+    if show_answer:
+        html += f'<div class="q-answer">Answer: {q["answer"]}</div>'
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
 # --- Connections ---
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
@@ -197,11 +258,7 @@ if query_task_id:
             st.write(f"**Mind Map: {q['title']}**")
             markmap(mindmap_to_markdown(q), height=400)
         else:
-            st.write(f"**Q{i}. {q['question']}**")
-            if q["type"] == "mcq":
-                for opt in q["options"]:
-                    st.write(f"- {opt}")
-            st.write("---")
+            render_question_card(i, q, show_answer=False)
 
     if st.button("Download PDF"):
         path = create_pdf(school_name_public, None, t['class_level'], t['subject'], t['topic'], questions, include_answers=False)
@@ -284,8 +341,12 @@ school_id = teacher_row.data[0]["school_id"]
 school = db.table("school_profile").select("*").eq("id", school_id).execute().data[0]
 school_name = school["school_name"]
 
-st.title("Summer Task Generator")
-st.caption(f"School: {school_name}")
+st.markdown(f"""
+<div class="app-header">
+    <h1>📚 Summer Task Generator</h1>
+    <p>{school_name}</p>
+</div>
+""", unsafe_allow_html=True)
 
 tab_create, tab_history = st.tabs(["Create New Task", "Task History"])
 
@@ -349,12 +410,7 @@ with tab_create:
                 st.write(f"**Mind Map: {q['title']}**")
                 markmap(mindmap_to_markdown(q), height=400)
             else:
-                st.write(f"**Q{i}. {q['question']}**")
-                if q["type"] == "mcq":
-                    for opt in q["options"]:
-                        st.write(f"- {opt}")
-                st.write(f"*Answer: {q['answer']}*")
-                st.write("---")
+                render_question_card(i, q, show_answer=True)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -388,11 +444,7 @@ with tab_history:
                         st.write(f"**Mind Map: {q['title']}**")
                         markmap(mindmap_to_markdown(q), height=400)
                     else:
-                        st.write(f"**Q{i}. {q['question']}**")
-                        if q["type"] == "mcq":
-                            for opt in q["options"]:
-                                st.write(f"- {opt}")
-                        st.write(f"*Answer: {q['answer']}*")
+                        render_question_card(i, q, show_answer=True)
 
                 colh1, colh2 = st.columns(2)
                 with colh1:
