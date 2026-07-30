@@ -219,65 +219,108 @@ school_name = school["school_name"]
 st.title("Summer Task Generator")
 st.caption(f"School: {school_name}")
 
-logo_file = st.file_uploader("School Logo (optional, per PDF)", type=["png", "jpg", "jpeg"])
-logo_path = None
-if logo_file:
-    logo_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
-    with open(logo_path, "wb") as f:
-        f.write(logo_file.getvalue())
+tab_create, tab_history = st.tabs(["Create New Task", "Task History"])
 
-st.subheader("Task Details")
-class_level = st.text_input("Class", "7")
-subject = st.text_input("Subject", "Science")
+with tab_create:
+    logo_file = st.file_uploader("School Logo (optional, per PDF)", type=["png", "jpg", "jpeg"])
+    logo_path = None
+    if logo_file:
+        logo_path = tempfile.NamedTemporaryFile(delete=False, suffix=".png").name
+        with open(logo_path, "wb") as f:
+            f.write(logo_file.getvalue())
 
-source_choice = st.radio("Question source", ["Type a topic", "Upload notes/chapter file"])
+    st.subheader("Task Details")
+    class_level = st.text_input("Class", "7")
+    subject = st.text_input("Subject", "Science")
 
-topic = ""
-source_text = None
+    source_choice = st.radio("Question source", ["Type a topic", "Upload notes/chapter file"])
 
-if source_choice == "Type a topic":
-    topic = st.text_input("Topic", "Photosynthesis")
-else:
-    notes_file = st.file_uploader("Upload notes/chapter (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"])
-    if notes_file:
-        with st.spinner("Reading file..."):
-            source_text = extract_text_from_file(notes_file)
-        if source_text:
-            st.success(f"Extracted {len(source_text)} characters from the file.")
-            topic = notes_file.name  # used for labeling the PDF only
-        else:
-            st.error("Couldn't extract text from this file. Try a different file.")
+    topic = ""
+    source_text = None
 
-question_type = st.selectbox("Question Type", ["mcq", "true_false", "fill_blank", "theory", "math"])
-count = st.number_input("Number of Questions", min_value=1, max_value=20, value=5)
-difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"])
-
-if st.button("Generate Questions"):
-    if source_choice == "Upload notes/chapter file" and not source_text:
-        st.error("Please upload a valid file first.")
+    if source_choice == "Type a topic":
+        topic = st.text_input("Topic", "Photosynthesis")
     else:
-        with st.spinner("Generating..."):
-            questions = generate_questions(class_level, subject, topic, question_type, count, difficulty, source_text=source_text)
-        st.session_state["questions"] = questions
+        notes_file = st.file_uploader("Upload notes/chapter (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"])
+        if notes_file:
+            with st.spinner("Reading file..."):
+                source_text = extract_text_from_file(notes_file)
+            if source_text:
+                st.success(f"Extracted {len(source_text)} characters from the file.")
+                topic = notes_file.name
+            else:
+                st.error("Couldn't extract text from this file. Try a different file.")
 
-if "questions" in st.session_state:
-    st.subheader("Preview")
-    for i, q in enumerate(st.session_state["questions"], 1):
-        st.write(f"**Q{i}. {q['question']}**")
-        if q["type"] == "mcq":
-            for opt in q["options"]:
-                st.write(f"- {opt}")
-        st.write(f"*Answer: {q['answer']}*")
-        st.write("---")
+    question_type = st.selectbox("Question Type", ["mcq", "true_false", "fill_blank", "theory", "math"])
+    count = st.number_input("Number of Questions", min_value=1, max_value=20, value=5)
+    difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Create Student PDF (no answers)"):
-            path = create_pdf(school_name, logo_path, class_level, subject, topic, st.session_state["questions"], include_answers=False)
-            with open(path, "rb") as f:
-                st.download_button("Download Student PDF", f, file_name="student_task.pdf", mime="application/pdf")
-    with col2:
-        if st.button("Create Teacher PDF (with answers)"):
-            path = create_pdf(school_name, logo_path, class_level, subject, topic, st.session_state["questions"], include_answers=True)
-            with open(path, "rb") as f:
-                st.download_button("Download Teacher PDF", f, file_name="teacher_answer_key.pdf", mime="application/pdf")
+    if st.button("Generate Questions"):
+        if source_choice == "Upload notes/chapter file" and not source_text:
+            st.error("Please upload a valid file first.")
+        else:
+            with st.spinner("Generating..."):
+                questions = generate_questions(class_level, subject, topic, question_type, count, difficulty, source_text=source_text)
+            st.session_state["questions"] = questions
+
+            # Save this task to history automatically
+            db.table("tasks").insert({
+                "school_id": school_id,
+                "class_level": class_level,
+                "subject": subject,
+                "topic": topic,
+                "question_type": question_type,
+                "difficulty": difficulty,
+                "questions_json": questions
+            }).execute()
+
+    if "questions" in st.session_state:
+        st.subheader("Preview")
+        for i, q in enumerate(st.session_state["questions"], 1):
+            st.write(f"**Q{i}. {q['question']}**")
+            if q["type"] == "mcq":
+                for opt in q["options"]:
+                    st.write(f"- {opt}")
+            st.write(f"*Answer: {q['answer']}*")
+            st.write("---")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Create Student PDF (no answers)"):
+                path = create_pdf(school_name, logo_path, class_level, subject, topic, st.session_state["questions"], include_answers=False)
+                with open(path, "rb") as f:
+                    st.download_button("Download Student PDF", f, file_name="student_task.pdf", mime="application/pdf")
+        with col2:
+            if st.button("Create Teacher PDF (with answers)"):
+                path = create_pdf(school_name, logo_path, class_level, subject, topic, st.session_state["questions"], include_answers=True)
+                with open(path, "rb") as f:
+                    st.download_button("Download Teacher PDF", f, file_name="teacher_answer_key.pdf", mime="application/pdf")
+
+with tab_history:
+    st.subheader("Past Tasks")
+    past_tasks = db.table("tasks").select("*").eq("school_id", school_id).order("created_at", desc=True).execute().data
+
+    if not past_tasks:
+        st.write("No tasks created yet.")
+    else:
+        for t in past_tasks:
+            with st.expander(f"{t['subject']} - {t['topic']} (Class {t['class_level']}, {t['question_type']}) — {t['created_at'][:10]}"):
+                questions = t["questions_json"]
+                for i, q in enumerate(questions, 1):
+                    st.write(f"**Q{i}. {q['question']}**")
+                    if q["type"] == "mcq":
+                        for opt in q["options"]:
+                            st.write(f"- {opt}")
+                    st.write(f"*Answer: {q['answer']}*")
+
+                colh1, colh2 = st.columns(2)
+                with colh1:
+                    if st.button("Download Student PDF", key=f"student_{t['id']}"):
+                        path = create_pdf(school_name, None, t['class_level'], t['subject'], t['topic'], questions, include_answers=False)
+                        with open(path, "rb") as f:
+                            st.download_button("Click to save", f, file_name="student_task.pdf", mime="application/pdf", key=f"dl_student_{t['id']}")
+                with colh2:
+                    if st.button("Download Teacher PDF", key=f"teacher_{t['id']}"):
+                        path = create_pdf(school_name, None, t['class_level'], t['subject'], t['topic'], questions, include_answers=True)
+                        with open(path, "rb") as f:
+                            st.download_button("Click to save", f, file_name="teacher_answer_key.pdf", mime="application/pdf", key=f"dl_teacher_{t['id']}")
