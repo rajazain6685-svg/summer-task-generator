@@ -4,3 +4,4 @@ fpdf2
 supabase
 pypdf
 python-docx
+streamlit-markmap
