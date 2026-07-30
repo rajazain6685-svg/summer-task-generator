@@ -32,7 +32,7 @@ def reset_password(email):
 
 
 # --- Question generation ---
-def generate_questions(class_level, subject, topic, question_type, count, difficulty="medium"):
+def generate_questions(class_level, subject, topic, question_type, count, difficulty="medium", source_text=None):
     format_instructions = {
         "mcq": '''[{"type": "mcq", "question": "...", "options": ["...", "...", "...", "..."], "answer": "..."}]''',
         "true_false": '''[{"type": "true_false", "question": "...", "answer": "True or False"}]''',
@@ -40,11 +40,27 @@ def generate_questions(class_level, subject, topic, question_type, count, diffic
         "theory": '''[{"type": "theory", "question": "...", "answer": "model answer text"}]''',
         "math": '''[{"type": "math", "question": "...", "answer": "final answer", "solution": "step by step solution"}]'''
     }
+
+    if source_text:
+        # Trim very long notes to keep prompt size reasonable
+        trimmed = source_text[:15000]
+        source_instruction = f"""
+Base the questions STRICTLY on the following notes/chapter content provided by the teacher.
+Do not use outside knowledge beyond what's in this text.
+
+--- NOTES START ---
+{trimmed}
+--- NOTES END ---
+"""
+    else:
+        source_instruction = f'Base the questions on general knowledge of the topic "{topic}".'
+
     prompt = f"""
 You are a question generator for a school summer task app.
 
-Generate {count} {question_type} questions for Class {class_level} {subject}
-on the topic "{topic}", at {difficulty} difficulty.
+Generate {count} {question_type} questions for Class {class_level} {subject}, at {difficulty} difficulty.
+
+{source_instruction}
 
 Return ONLY valid JSON, no extra text, no markdown code fences, in this exact format:
 
@@ -56,6 +72,30 @@ Return ONLY valid JSON, no extra text, no markdown code fences, in this exact fo
         text = text.strip("`")
         text = text.replace("json", "", 1).strip()
     return json.loads(text)
+
+
+def extract_text_from_file(uploaded_file):
+    """Extracts text from an uploaded PDF, DOCX, or TXT file."""
+    name = uploaded_file.name.lower()
+
+    if name.endswith(".pdf"):
+        from pypdf import PdfReader
+        reader = PdfReader(uploaded_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text
+
+    elif name.endswith(".docx"):
+        from docx import Document
+        doc = Document(uploaded_file)
+        return "\n".join(p.text for p in doc.paragraphs)
+
+    elif name.endswith(".txt"):
+        return uploaded_file.read().decode("utf-8")
+
+    else:
+        return ""
 
 
 # --- PDF generation ---
@@ -189,15 +229,36 @@ if logo_file:
 st.subheader("Task Details")
 class_level = st.text_input("Class", "7")
 subject = st.text_input("Subject", "Science")
-topic = st.text_input("Topic", "Photosynthesis")
+
+source_choice = st.radio("Question source", ["Type a topic", "Upload notes/chapter file"])
+
+topic = ""
+source_text = None
+
+if source_choice == "Type a topic":
+    topic = st.text_input("Topic", "Photosynthesis")
+else:
+    notes_file = st.file_uploader("Upload notes/chapter (PDF, DOCX, or TXT)", type=["pdf", "docx", "txt"])
+    if notes_file:
+        with st.spinner("Reading file..."):
+            source_text = extract_text_from_file(notes_file)
+        if source_text:
+            st.success(f"Extracted {len(source_text)} characters from the file.")
+            topic = notes_file.name  # used for labeling the PDF only
+        else:
+            st.error("Couldn't extract text from this file. Try a different file.")
+
 question_type = st.selectbox("Question Type", ["mcq", "true_false", "fill_blank", "theory", "math"])
 count = st.number_input("Number of Questions", min_value=1, max_value=20, value=5)
 difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"])
 
 if st.button("Generate Questions"):
-    with st.spinner("Generating..."):
-        questions = generate_questions(class_level, subject, topic, question_type, count, difficulty)
-    st.session_state["questions"] = questions
+    if source_choice == "Upload notes/chapter file" and not source_text:
+        st.error("Please upload a valid file first.")
+    else:
+        with st.spinner("Generating..."):
+            questions = generate_questions(class_level, subject, topic, question_type, count, difficulty, source_text=source_text)
+        st.session_state["questions"] = questions
 
 if "questions" in st.session_state:
     st.subheader("Preview")
