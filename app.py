@@ -4,6 +4,7 @@ from supabase import create_client
 import json
 from fpdf import FPDF
 import tempfile
+from streamlit_markmap import markmap
 
 # --- Connections ---
 api_key = st.secrets["GEMINI_API_KEY"]
@@ -38,7 +39,8 @@ def generate_questions(class_level, subject, topic, question_type, count, diffic
         "true_false": '''[{"type": "true_false", "question": "...", "answer": "True or False"}]''',
         "fill_blank": '''[{"type": "fill_blank", "question": "sentence with ____ blank", "answer": "..."}]''',
         "theory": '''[{"type": "theory", "question": "...", "answer": "model answer text"}]''',
-        "math": '''[{"type": "math", "question": "...", "answer": "final answer", "solution": "step by step solution"}]'''
+        "math": '''[{"type": "math", "question": "...", "answer": "final answer", "solution": "step by step solution"}]''',
+        "mind_map": '''[{"type": "mind_map", "title": "Central Topic", "children": [{"title": "Main Branch 1", "children": [{"title": "Sub-point", "children": []}]}, {"title": "Main Branch 2", "children": []}]}]'''
     }
 
     if source_text:
@@ -55,10 +57,15 @@ Do not use outside knowledge beyond what's in this text.
     else:
         source_instruction = f'Base the questions on general knowledge of the topic "{topic}".'
 
+    if question_type == "mind_map":
+        count_instruction = f"with about {count} main branches, each with 2-4 sub-points"
+    else:
+        count_instruction = f"{count} separate questions"
+
     prompt = f"""
 You are a question generator for a school summer task app.
 
-Generate {count} {question_type} questions for Class {class_level} {subject}, at {difficulty} difficulty.
+Generate a {question_type} for Class {class_level} {subject}, at {difficulty} difficulty, {count_instruction}.
 
 {source_instruction}
 
@@ -98,6 +105,21 @@ def extract_text_from_file(uploaded_file):
         return ""
 
 
+def mindmap_to_markdown(node, level=1):
+    """Converts a mind map node (title + children) into markdown outline for markmap."""
+    md = ("#" * level) + " " + node["title"] + "\n" if level == 1 else ("  " * (level - 1)) + "- " + node["title"] + "\n"
+    for child in node.get("children", []):
+        md += mindmap_to_markdown(child, level + 1)
+    return md
+
+def mindmap_to_pdf_lines(node, level=0):
+    """Converts a mind map node into indented text lines for the PDF."""
+    lines = [("    " * level) + ("- " if level > 0 else "") + node["title"]]
+    for child in node.get("children", []):
+        lines += mindmap_to_pdf_lines(child, level + 1)
+    return lines
+
+
 # --- PDF generation ---
 def clean_text(text):
     return text.encode("latin-1", "replace").decode("latin-1")
@@ -126,6 +148,15 @@ def create_pdf(school_name, logo_path, class_level, subject, topic, questions, i
 
     pdf.set_font("Helvetica", "", 11)
     for i, q in enumerate(questions, 1):
+        if q["type"] == "mind_map":
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.multi_cell(0, 7, clean_text("Mind Map: " + q["title"]), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 11)
+            for line in mindmap_to_pdf_lines(q)[1:]:  # skip title, already printed above
+                pdf.multi_cell(0, 6, clean_text(line), new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(2)
+            continue
+
         pdf.multi_cell(0, 7, clean_text(f"Q{i}. {q['question']}"), new_x="LMARGIN", new_y="NEXT")
         if q["type"] == "mcq":
             for opt in q["options"]:
@@ -251,7 +282,7 @@ with tab_create:
             else:
                 st.error("Couldn't extract text from this file. Try a different file.")
 
-    question_type = st.selectbox("Question Type", ["mcq", "true_false", "fill_blank", "theory", "math"])
+    question_type = st.selectbox("Question Type", ["mcq", "true_false", "fill_blank", "theory", "math", "mind_map"])
     count = st.number_input("Number of Questions", min_value=1, max_value=20, value=5)
     difficulty = st.selectbox("Difficulty", ["easy", "medium", "hard"])
 
@@ -277,12 +308,16 @@ with tab_create:
     if "questions" in st.session_state:
         st.subheader("Preview")
         for i, q in enumerate(st.session_state["questions"], 1):
-            st.write(f"**Q{i}. {q['question']}**")
-            if q["type"] == "mcq":
-                for opt in q["options"]:
-                    st.write(f"- {opt}")
-            st.write(f"*Answer: {q['answer']}*")
-            st.write("---")
+            if q["type"] == "mind_map":
+                st.write(f"**Mind Map: {q['title']}**")
+                markmap(mindmap_to_markdown(q), height=400)
+            else:
+                st.write(f"**Q{i}. {q['question']}**")
+                if q["type"] == "mcq":
+                    for opt in q["options"]:
+                        st.write(f"- {opt}")
+                st.write(f"*Answer: {q['answer']}*")
+                st.write("---")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -307,11 +342,15 @@ with tab_history:
             with st.expander(f"{t['subject']} - {t['topic']} (Class {t['class_level']}, {t['question_type']}) — {t['created_at'][:10]}"):
                 questions = t["questions_json"]
                 for i, q in enumerate(questions, 1):
-                    st.write(f"**Q{i}. {q['question']}**")
-                    if q["type"] == "mcq":
-                        for opt in q["options"]:
-                            st.write(f"- {opt}")
-                    st.write(f"*Answer: {q['answer']}*")
+                    if q["type"] == "mind_map":
+                        st.write(f"**Mind Map: {q['title']}**")
+                        markmap(mindmap_to_markdown(q), height=400)
+                    else:
+                        st.write(f"**Q{i}. {q['question']}**")
+                        if q["type"] == "mcq":
+                            for opt in q["options"]:
+                                st.write(f"- {opt}")
+                        st.write(f"*Answer: {q['answer']}*")
 
                 colh1, colh2 = st.columns(2)
                 with colh1:
