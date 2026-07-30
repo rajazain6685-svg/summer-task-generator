@@ -17,6 +17,8 @@ supabase = create_client(supabase_url, supabase_key)  # used for auth (signup/lo
 service_key = st.secrets["SUPABASE_SERVICE_KEY"]
 db = create_client(supabase_url, service_key)  # used for table reads/writes (server-side only, bypasses RLS)
 
+app_url = st.secrets.get("APP_URL", "")
+
 # --- Auth helpers ---
 def sign_up(email, password):
     return supabase.auth.sign_up({"email": email, "password": password})
@@ -172,6 +174,41 @@ def create_pdf(school_name, logo_path, class_level, subject, topic, questions, i
     pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
     pdf.output(pdf_path)
     return pdf_path
+
+
+# --- Public shareable view (no login required) ---
+query_task_id = st.query_params.get("task")
+if query_task_id:
+    task_result = db.table("tasks").select("*").eq("id", query_task_id).execute().data
+    if not task_result:
+        st.error("This task link is invalid or the task was deleted.")
+        st.stop()
+
+    t = task_result[0]
+    school_result = db.table("school_profile").select("*").eq("id", t["school_id"]).execute().data
+    school_name_public = school_result[0]["school_name"] if school_result else "School"
+
+    st.title(school_name_public)
+    st.caption(f"Summer Vacation Task — Class {t['class_level']}, {t['subject']}, {t['topic']}")
+
+    questions = t["questions_json"]
+    for i, q in enumerate(questions, 1):
+        if q["type"] == "mind_map":
+            st.write(f"**Mind Map: {q['title']}**")
+            markmap(mindmap_to_markdown(q), height=400)
+        else:
+            st.write(f"**Q{i}. {q['question']}**")
+            if q["type"] == "mcq":
+                for opt in q["options"]:
+                    st.write(f"- {opt}")
+            st.write("---")
+
+    if st.button("Download PDF"):
+        path = create_pdf(school_name_public, None, t['class_level'], t['subject'], t['topic'], questions, include_answers=False)
+        with open(path, "rb") as f:
+            st.download_button("Click to save PDF", f, file_name="student_task.pdf", mime="application/pdf")
+
+    st.stop()  # public visitors stop here — never see the teacher login screen
 
 
 # --- Session state ---
@@ -340,6 +377,11 @@ with tab_history:
     else:
         for t in past_tasks:
             with st.expander(f"{t['subject']} - {t['topic']} (Class {t['class_level']}, {t['question_type']}) — {t['created_at'][:10]}"):
+                share_url = f"{app_url}/?task={t['id']}" if app_url else f"?task={t['id']}"
+                st.text_input("Shareable link for students/parents", value=share_url, key=f"share_{t['id']}")
+                if not app_url:
+                    st.caption("Tip: add APP_URL in Streamlit secrets (your app's live URL) to get a full clickable link.")
+
                 questions = t["questions_json"]
                 for i, q in enumerate(questions, 1):
                     if q["type"] == "mind_map":
