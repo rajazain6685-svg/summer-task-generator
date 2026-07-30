@@ -149,6 +149,7 @@ if not st.session_state["user"]:
 # Re-attach the saved login session to this fresh connection so
 # Supabase's Row Level Security recognizes us as authenticated.
 supabase.auth.set_session(st.session_state["access_token"], st.session_state["refresh_token"])
+supabase.postgrest.auth(st.session_state["access_token"])
 
 user = st.session_state["user"]
 st.sidebar.write(f"Logged in as: {user.email}")
