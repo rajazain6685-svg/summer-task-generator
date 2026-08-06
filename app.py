@@ -187,50 +187,96 @@ def mindmap_to_pdf_lines(node, level=0):
 def clean_text(text):
     return text.encode("latin-1", "replace").decode("latin-1")
 
+class StyledPDF(FPDF):
+    def __init__(self, school_name, logo_path, class_level, subject, topic, include_answers):
+        super().__init__()
+        self.school_name = school_name
+        self.logo_path = logo_path
+        self.class_level = class_level
+        self.subject = subject
+        self.topic = topic
+        self.include_answers = include_answers
+
+    def header(self):
+        # Green banner across the top of every page
+        self.set_fill_color(46, 125, 50)
+        self.rect(0, 0, 210, 28, style="F")
+
+        if self.logo_path:
+            self.image(self.logo_path, x=8, y=5, w=18)
+            text_x = 30
+        else:
+            text_x = 10
+
+        self.set_xy(text_x, 6)
+        self.set_text_color(255, 255, 255)
+        self.set_font("Helvetica", "B", 15)
+        self.cell(0, 8, clean_text(self.school_name), new_x="LMARGIN", new_y="NEXT")
+
+        self.set_x(text_x)
+        self.set_font("Helvetica", "", 10)
+        label = "Summer Vacation Task" + (" - Answer Key" if self.include_answers else "")
+        self.cell(0, 6, label, new_x="LMARGIN", new_y="NEXT")
+
+        self.set_text_color(0, 0, 0)
+        self.set_y(32)
+        self.set_font("Helvetica", "B", 10)
+        self.set_fill_color(241, 248, 244)
+        self.cell(0, 8, clean_text(f"Class: {self.class_level}   |   Subject: {self.subject}   |   Topic: {self.topic}"),
+                  fill=True, new_x="LMARGIN", new_y="NEXT")
+        self.ln(4)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Helvetica", "I", 8)
+        self.set_text_color(140, 140, 140)
+        self.cell(0, 10, f"Page {self.page_no()}", align="C")
+
+
 def create_pdf(school_name, logo_path, class_level, subject, topic, questions, include_answers):
-    pdf = FPDF()
+    pdf = StyledPDF(school_name, logo_path, class_level, subject, topic, include_answers)
+    pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
-
-    if logo_path:
-        pdf.image(logo_path, x=10, y=8, w=20)
-        pdf.set_xy(35, 10)
-    else:
-        pdf.set_xy(10, 10)
-
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, clean_text(school_name), new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_font("Helvetica", "", 12)
-    label = "Summer Vacation Task" + (" - Answer Key" if include_answers else "")
-    pdf.cell(0, 8, label, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-
-    pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 8, clean_text(f"Class: {class_level}    Subject: {subject}    Topic: {topic}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
 
     pdf.set_font("Helvetica", "", 11)
     for i, q in enumerate(questions, 1):
         if q["type"] == "mind_map":
             pdf.set_font("Helvetica", "B", 12)
+            pdf.set_text_color(46, 125, 50)
             pdf.multi_cell(0, 7, clean_text("Mind Map: " + q["title"]), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
             pdf.set_font("Helvetica", "", 11)
-            for line in mindmap_to_pdf_lines(q)[1:]:  # skip title, already printed above
+            for line in mindmap_to_pdf_lines(q)[1:]:
                 pdf.multi_cell(0, 6, clean_text(line), new_x="LMARGIN", new_y="NEXT")
             pdf.ln(2)
             continue
 
-        pdf.multi_cell(0, 7, clean_text(f"Q{i}. {q['question']}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(46, 125, 50)
+        pdf.cell(0, 6, clean_text(f"Q{i}"), new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 7, clean_text(q["question"]), new_x="LMARGIN", new_y="NEXT")
+
         if q["type"] == "mcq":
             for opt in q["options"]:
-                pdf.multi_cell(0, 6, clean_text(f"    - {opt}"), new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(0, 6, clean_text(f"     -  {opt}"), new_x="LMARGIN", new_y="NEXT")
+
         if include_answers:
             pdf.set_font("Helvetica", "I", 10)
-            pdf.multi_cell(0, 6, clean_text(f"    Answer: {q['answer']}"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(46, 125, 50)
+            pdf.multi_cell(0, 6, clean_text(f"Answer: {q['answer']}"), new_x="LMARGIN", new_y="NEXT")
             if "solution" in q:
-                pdf.multi_cell(0, 6, clean_text(f"    Solution: {q['solution']}"), new_x="LMARGIN", new_y="NEXT")
+                pdf.set_text_color(90, 90, 90)
+                pdf.multi_cell(0, 6, clean_text(f"Solution: {q['solution']}"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
             pdf.set_font("Helvetica", "", 11)
-        pdf.ln(2)
+
+        pdf.ln(3)
+        pdf.set_draw_color(220, 230, 222)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(4)
 
     pdf_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
     pdf.output(pdf_path)
@@ -457,3 +503,4 @@ with tab_history:
                         path = create_pdf(school_name, None, t['class_level'], t['subject'], t['topic'], questions, include_answers=True)
                         with open(path, "rb") as f:
                             st.download_button("Click to save", f, file_name="teacher_answer_key.pdf", mime="application/pdf", key=f"dl_teacher_{t['id']}")
+    
